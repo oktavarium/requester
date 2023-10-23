@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	requester "github.com/oktavarium/requester/internal"
+)
 
 func main() {
 	if err := requester.Run(); err != nil {

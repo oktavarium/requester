@@ -15,22 +15,23 @@ func fileExists(filePath string) bool {
 	return true
 }
 
-func getUrls(ch chan<- string, chErr chan<- error, filePath string) error {
-	defer close(ch)
-	defer close(chErr)
+func getUrls(urlCh chan<- string, errCh chan<- error, filePath string) {
+	defer close(urlCh)
+	defer close(errCh)
 	f, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("error occured on opening file: %w", err)
+		errCh <- fmt.Errorf("error occured on opening file: %w", err)
+		return
 	}
+	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		ch <- scanner.Text()
+		urlCh <- scanner.Text()
 	}
 
 	if err := scanner.Err(); err != nil {
-		chErr <- fmt.Errorf("error occured on reading file: %w", err)
+		errCh <- fmt.Errorf("error occured on reading file: %w", err)
+		return
 	}
-
-	return nil
 }
