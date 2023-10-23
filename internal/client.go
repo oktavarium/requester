@@ -59,7 +59,7 @@ func fetchURLs(chURL <-chan string, chOut chan<- string) {
 				return
 			}
 
-			chOut <- fmt.Sprintf("Requesting %s. Size: %d. Duration: %d ms\n", URL, size, duration.Milliseconds())
+			chOut <- fmt.Sprintf("Requesting %s. Size: %d. Duration: %s\n", URL, size, duration.String())
 		}(URL)
 
 	}
