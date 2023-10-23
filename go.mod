@@ -1,6 +1,6 @@
 module github.com/oktavarium/requester
 
-go 1.21.3
+go 1.21
 
 require (
 	github.com/caarlos0/env v3.5.0+incompatible
