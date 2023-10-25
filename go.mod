@@ -4,10 +4,7 @@ go 1.21
 
 require (
 	github.com/caarlos0/env v3.5.0+incompatible
-	github.com/go-resty/resty/v2 v2.10.0
+	golang.org/x/sync v0.4.0
 )
 
-require (
-	github.com/stretchr/testify v1.8.4 // indirect
-	golang.org/x/net v0.17.0 // indirect
-)
+require github.com/stretchr/testify v1.8.4 // indirect

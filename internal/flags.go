@@ -27,5 +27,9 @@ func loadConfig() (config, error) {
 		return flagsConfig, fmt.Errorf("unrecognised flags found")
 	}
 
+	if len(flagsConfig.FilePath) == 0 {
+		return flagsConfig, fmt.Errorf("file path can't be empty")
+	}
+
 	return flagsConfig, nil
 }

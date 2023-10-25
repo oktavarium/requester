@@ -2,36 +2,42 @@ package requester
 
 import (
 	"bufio"
-	"errors"
+	"context"
 	"fmt"
 	"os"
+
+	"golang.org/x/sync/errgroup"
 )
 
-func fileExists(filePath string) bool {
-	if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
-		return false
-	}
+func getURLs(ctx context.Context,
+	eg *errgroup.Group,
+	bufferSize uint64,
+	filePath string) <-chan string {
 
-	return true
-}
+	outCh := make(chan string, bufferSize)
 
-func getUrls(urlCh chan<- string, errCh chan<- error, filePath string) {
-	defer close(urlCh)
-	defer close(errCh)
-	f, err := os.Open(filePath)
-	if err != nil {
-		errCh <- fmt.Errorf("error occured on opening file: %w", err)
-		return
-	}
-	defer f.Close()
+	eg.Go(func() error {
+		defer close(outCh)
+		f, err := os.Open(filePath)
+		if err != nil {
+			return fmt.Errorf("error occured on opening file: %w", err)
+		}
+		defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		urlCh <- scanner.Text()
-	}
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			if ctx.Err() != nil {
+				return nil
+			}
+			outCh <- scanner.Text()
+		}
 
-	if err := scanner.Err(); err != nil {
-		errCh <- fmt.Errorf("error occured on reading file: %w", err)
-		return
-	}
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("error occured on reading file: %w", err)
+		}
+
+		return nil
+	})
+
+	return outCh
 }

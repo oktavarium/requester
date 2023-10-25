@@ -2,12 +2,15 @@ package requester
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 func getResponseSize(r io.Reader) (int64, error) {
@@ -20,48 +23,69 @@ func getResponseSize(r io.Reader) (int64, error) {
 	return size, nil
 }
 
-func fetchURLs(chURL <-chan string, chOut chan<- string) {
-	defer close(chOut)
+func fetchURLs(ctx context.Context,
+	eg *errgroup.Group,
+	bufferSize uint64,
+	urlCh <-chan string) <-chan string {
+
+	outCh := make(chan string, bufferSize)
+	goLimiter := make(chan struct{}, bufferSize)
+
 	t := &http.Transport{}
 	t.MaxIdleConns = 1
 	t.MaxConnsPerHost = 1
 	t.MaxIdleConnsPerHost = 1
-	t.IdleConnTimeout = 1 * time.Millisecond
+	t.IdleConnTimeout = 1 * time.Second
 
 	client := &http.Client{
 		Timeout:   1 * time.Second,
 		Transport: t,
 	}
-	var wg sync.WaitGroup
-	for URL := range chURL {
-		wg.Add(1)
-		go func(URL string) {
-			defer wg.Done()
 
-			if _, err := url.ParseRequestURI(URL); err != nil {
-				chOut <- fmt.Sprintf("error on parsing %s. Error: %s\n", URL, err)
-				return
+	eg.Go(func() error {
+		defer close(goLimiter)
+		defer close(outCh)
+		var wg sync.WaitGroup
+
+		for URL := range urlCh {
+			wg.Add(1)
+			goLimiter <- struct{}{}
+			go func(URL string) {
+				defer wg.Done()
+				defer func() {
+					<-goLimiter
+				}()
+
+				if _, err := url.ParseRequestURI(URL); err != nil {
+					outCh <- fmt.Sprintf("error on parsing %s. Error: %s\n", URL, err)
+					return
+				}
+
+				start := time.Now()
+				resp, err := client.Get(URL)
+				duration := time.Since(start)
+
+				if err != nil {
+					outCh <- fmt.Sprintf("error on requesting %s. Error: %s\n", URL, err)
+					return
+				}
+
+				defer resp.Body.Close()
+				size, err := getResponseSize(resp.Body)
+				if err != nil {
+					outCh <- fmt.Sprintf("error on requesting %s. Error: %s\n", URL, err)
+					return
+				}
+				outCh <- fmt.Sprintf("Requesting %s. Size: %d. Duration: %s\n", URL, size, duration.String())
+			}(URL)
+
+			if ctx.Err() != nil {
+				return nil
 			}
+		}
+		wg.Wait()
+		return nil
+	})
 
-			start := time.Now()
-			resp, err := client.Get(URL)
-			duration := time.Since(start)
-
-			if err != nil {
-				chOut <- fmt.Sprintf("error on requesting %s. Error: %s\n", URL, err)
-				return
-			}
-
-			defer resp.Body.Close()
-			size, err := getResponseSize(resp.Body)
-			if err != nil {
-				chOut <- fmt.Sprintf("error on requesting %s. Error: %s\n", URL, err)
-				return
-			}
-
-			chOut <- fmt.Sprintf("Requesting %s. Size: %d. Duration: %s\n", URL, size, duration.String())
-		}(URL)
-
-	}
-	wg.Wait()
+	return outCh
 }

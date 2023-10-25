@@ -1,42 +1,31 @@
 package requester
 
 import (
-	"bufio"
+	"context"
 	"fmt"
-	"os"
 	"syscall"
+
+	"golang.org/x/sync/errgroup"
 )
 
 func Run() error {
 	var limit syscall.Rlimit
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limit); err != nil {
-		fmt.Println("Getrlimit:" + err.Error())
+		return fmt.Errorf("error occured on getting syscall limits: %w", err)
 	}
-	fmt.Printf("%v file descriptors out of a maximum of %v available\n", limit.Cur, limit.Max)
 
 	flagsConfig, err := loadConfig()
 	if err != nil {
 		return fmt.Errorf("error occured on parsing config: %w", err)
 	}
 
-	if !fileExists(flagsConfig.FilePath) {
-		return fmt.Errorf("file does not exist")
-	}
+	eg, ctx := errgroup.WithContext(context.Background())
 
-	writer := bufio.NewWriter(os.Stdout)
-	urlCh := make(chan string, 1000)
-	errCh := make(chan error)
-	resultCh := make(chan string, 1000)
+	urlCh := getURLs(ctx, eg, limit.Cur, flagsConfig.FilePath)
+	resultCh := fetchURLs(ctx, eg, limit.Cur, urlCh)
+	writer(ctx, eg, resultCh)
 
-	go getUrls(urlCh, errCh, flagsConfig.FilePath)
-	go fetchURLs(urlCh, resultCh)
-
-	for result := range resultCh {
-		writer.WriteString(result)
-	}
-	writer.Flush()
-
-	if err := <-errCh; err != nil {
+	if err := eg.Wait(); err != nil {
 		return err
 	}
 
