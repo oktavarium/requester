@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/oktavarium/requester/internal/semaphore"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -29,7 +30,7 @@ func fetchURLs(ctx context.Context,
 	urlCh <-chan string) <-chan string {
 
 	outCh := make(chan string, bufferSize)
-	goLimiter := make(chan struct{}, bufferSize)
+	smphr := semaphore.NewSemaphore(bufferSize)
 
 	t := &http.Transport{}
 	t.MaxIdleConns = 1
@@ -43,18 +44,15 @@ func fetchURLs(ctx context.Context,
 	}
 
 	eg.Go(func() error {
-		defer close(goLimiter)
 		defer close(outCh)
 		var wg sync.WaitGroup
 
 		for URL := range urlCh {
 			wg.Add(1)
-			goLimiter <- struct{}{}
+			smphr.Acquire()
 			go func(URL string) {
 				defer wg.Done()
-				defer func() {
-					<-goLimiter
-				}()
+				defer smphr.Release()
 
 				if _, err := url.ParseRequestURI(URL); err != nil {
 					outCh <- fmt.Sprintf("error on parsing %s. Error: %s\n", URL, err)
